@@ -26,6 +26,7 @@ internal class Program
         if(string.IsNullOrEmpty(Key))
         {
             Key = Environment.GetEnvironmentVariable("NUGETKEY")!;
+            Console.WriteLine($"Key length: {Key.Length}");
         }
         try
         {
