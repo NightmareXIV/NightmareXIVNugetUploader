@@ -88,6 +88,7 @@ internal class Program
         catch(Exception e)
         {
             Console.WriteLine(e.ToString());
+            Environment.Exit(1);
         }
         Console.WriteLine("Completed");
         //Console.ReadLine();
