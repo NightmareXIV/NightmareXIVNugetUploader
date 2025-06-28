@@ -66,6 +66,13 @@ internal class Program
             })!.WaitForExit();
 
             var path = Directory.GetFiles(Path.Combine("repo_ecommons", "ECommons", "bin", "Release")).First(x => x.EndsWith(".nupkg") && x.Contains("ECommons."));
+
+            if(PackageVersionExistsFromNupkgAsync(path).Result)
+            {
+                Console.WriteLine("Version already exists, will not upload");
+                return;
+            }
+
             var sourceUrl = "https://api.nuget.org/v3/index.json";
             try
             {
@@ -116,8 +123,7 @@ internal class Program
             file.Attributes = FileAttributes.Normal;
         }
     }
-
-    public static string GetPackageVersion(string nupkgPath)
+    public static (string PackageId, string Version) GetPackageIdAndVersion(string nupkgPath)
     {
         if(!File.Exists(nupkgPath))
             throw new FileNotFoundException($"File not found: {nupkgPath}");
@@ -125,20 +131,24 @@ internal class Program
         using var packageReader = new PackageArchiveReader(nupkgPath);
         PackageIdentity identity = packageReader.GetIdentity();
 
-        return identity.Version.ToString();
+        return (identity.Id, identity.Version.ToString());
     }
 
-    public static bool PackageVersionExists(string packageId, string version, string sourceUrl = "https://api.nuget.org/v3/index.json")
+    /// <summary>
+    /// Checks whether a specific version of a package exists on the NuGet feed.
+    /// </summary>
+    public static async Task<bool> PackageVersionExistsAsync(string packageId, string version, string sourceUrl = "https://api.nuget.org/v3/index.json")
     {
         try
         {
             string packageIdLower = packageId.ToLowerInvariant();
 
+            // Get NuGet service index
             string indexUrl = sourceUrl;
             if(!indexUrl.EndsWith("/index.json"))
                 indexUrl = sourceUrl.TrimEnd('/') + "/index.json";
 
-            string json = Client.GetStringAsync(indexUrl).Result;
+            string json = await Client.GetStringAsync(indexUrl);
             using JsonDocument doc = JsonDocument.Parse(json);
 
             string packageBaseAddress = null;
@@ -146,7 +156,7 @@ internal class Program
             {
                 if(resource.GetProperty("@type").GetString() == "PackageBaseAddress/3.0.0")
                 {
-                    packageBaseAddress = resource.GetProperty("@id").GetString()!;
+                    packageBaseAddress = resource.GetProperty("@id").GetString();
                     break;
                 }
             }
@@ -154,8 +164,9 @@ internal class Program
             if(packageBaseAddress == null)
                 throw new Exception("PackageBaseAddress not found in NuGet index.");
 
+            // Check for existing versions
             string versionsUrl = $"{packageBaseAddress}{packageIdLower}/index.json";
-            string versionsJson = Client.GetStringAsync(versionsUrl).Result;
+            string versionsJson = await Client.GetStringAsync(versionsUrl);
             using JsonDocument versionsDoc = JsonDocument.Parse(versionsJson);
 
             foreach(var v in versionsDoc.RootElement.GetProperty("versions").EnumerateArray())
@@ -168,7 +179,7 @@ internal class Program
         }
         catch(HttpRequestException ex) when(ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
-            // Package does not exist at all
+            // Package not found at all
             return false;
         }
         catch(Exception ex)
@@ -176,5 +187,14 @@ internal class Program
             Console.WriteLine($"Error checking package version: {ex.Message}");
             throw;
         }
+    }
+
+    /// <summary>
+    /// Combines extraction and version existence check from a .nupkg file.
+    /// </summary>
+    public static async Task<bool> PackageVersionExistsFromNupkgAsync(string nupkgPath, string sourceUrl = "https://api.nuget.org/v3/index.json")
+    {
+        var (packageId, version) = GetPackageIdAndVersion(nupkgPath);
+        return await PackageVersionExistsAsync(packageId, version, sourceUrl);
     }
 }
