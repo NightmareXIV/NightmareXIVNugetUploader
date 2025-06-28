@@ -75,15 +75,8 @@ internal class Program
             }
 
             var sourceUrl = "https://api.nuget.org/v3/index.json";
-            try
-            {
-                PushPackage(path, sourceUrl, Key);
-                Console.WriteLine("Package uploaded successfully.");
-            }
-            catch(Exception ex)
-            {
-                Console.WriteLine($"Failed to upload package: {ex.Message}");
-            }
+            PushPackage(path, sourceUrl, Key);
+            Console.WriteLine("Package uploaded successfully.");
         }
         catch(Exception e)
         {
