@@ -201,26 +201,55 @@ internal class Program
     {
         var (packageId, version) = GetPackageIdAndVersion(nupkgPath);
 
-        // Always check exact version from .nupkg
-        if(await PackageVersionExistsAsync(packageId, version, sourceUrl))
-        {
-            Console.WriteLine($"Version '{version}' already exists.");
-            return true;
-        }
+        string baseVersion = version.Split('-')[0];
 
-        // If the version has a suffix (e.g. 3.0.0.8-beta), also check the base version (e.g. 3.0.0.8)
-        var dashIndex = version.IndexOf('-');
-        if(dashIndex > 0)
+        // Get all versions of this package from the feed
+        var allVersions = await GetAllPackageVersionsAsync(packageId, sourceUrl);
+
+        // Check if any version starts with the same base version
+        foreach(var v in allVersions)
         {
-            var baseVersion = version.Substring(0, dashIndex);
-            if(await PackageVersionExistsAsync(packageId, baseVersion, sourceUrl))
+            if(v.StartsWith(baseVersion + "-", StringComparison.OrdinalIgnoreCase) || v.Equals(baseVersion, StringComparison.OrdinalIgnoreCase))
             {
-                Console.WriteLine($"Base version '{baseVersion}' already exists.");
+                Console.WriteLine($"A version with base '{baseVersion}' already exists on NuGet: {v}");
                 return true;
             }
         }
 
         return false;
+    }
+
+    public static async Task<List<string>> GetAllPackageVersionsAsync(string packageId, string sourceUrl = "https://api.nuget.org/v3/index.json")
+    {
+        string packageIdLower = packageId.ToLowerInvariant();
+
+        if(!sourceUrl.EndsWith("/index.json"))
+            sourceUrl = sourceUrl.TrimEnd('/') + "/index.json";
+
+        string json = await Client.GetStringAsync(sourceUrl);
+        using JsonDocument doc = JsonDocument.Parse(json);
+
+        string? packageBaseAddress = null;
+        foreach(var resource in doc.RootElement.GetProperty("resources").EnumerateArray())
+        {
+            if(resource.GetProperty("@type").GetString() == "PackageBaseAddress/3.0.0")
+            {
+                packageBaseAddress = resource.GetProperty("@id").GetString();
+                break;
+            }
+        }
+
+        if(packageBaseAddress == null)
+            throw new Exception("PackageBaseAddress not found in NuGet index.");
+
+        string versionsUrl = $"{packageBaseAddress}{packageIdLower}/index.json";
+        string versionsJson = await Client.GetStringAsync(versionsUrl);
+        using JsonDocument versionsDoc = JsonDocument.Parse(versionsJson);
+
+        return versionsDoc.RootElement.GetProperty("versions")
+            .EnumerateArray()
+            .Select(v => v.GetString()!)
+            .ToList();
     }
 
     static string? GetPackageSuffixFromNupkg(string releaseFolderPath)
