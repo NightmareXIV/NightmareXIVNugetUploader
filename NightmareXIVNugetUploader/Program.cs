@@ -48,45 +48,53 @@ internal class Program
                     BranchName = "master",
                 });
                 Console.WriteLine("Downloading Dalamud...");
-                string dalamudUrl = "https://github.com/goatcorp/dalamud-distrib/raw/refs/heads/main";
-                var suffix = GetPackageSuffixFromNupkg(Path.Combine("repo_ecommons", "ECommons", "bin", "Release"));
 
-                if(!string.IsNullOrEmpty(suffix))
-                {
-                    dalamudUrl += $"/{suffix}";
-                }
+                var csprojPath = Path.Combine("repo_ecommons", "ECommons", "ECommons.csproj");
 
-                dalamudUrl += "/latest.zip";
+                // Read base version
+                string versionFromCsproj = ExtractVersionFromCsproj(csprojPath);
+
+                // Read suffix from PackageKind (null if missing)
+                string? packageKind = ExtractPackageKindFromCsproj(csprojPath);
+
+                string baseVersion = GetBaseVersion(versionFromCsproj);
+
+                string dalamudUrlBase = "https://github.com/goatcorp/dalamud-distrib/raw/refs/heads/main/";
+                string dalamudUrl = packageKind == null
+                    ? $"{dalamudUrlBase}latest.zip"
+                    : $"{dalamudUrlBase}{packageKind}/latest.zip";
 
                 using var dalamud = Client.GetStreamAsync(dalamudUrl).Result;
                 Console.WriteLine("Extracting Dalamud...");
                 ZipFile.ExtractToDirectory(dalamud, "bin_dalamud");
             }
-            var slnPath = Path.Combine("repo_ecommons", "ECommons.sln");
-            var csprojPath = Path.Combine("repo_ecommons", "ECommons", "ECommons.csproj");
-            var csproj = File.ReadAllText(csprojPath);
-            csproj = csproj.Replace("$(DalamudLibPath)", Path.Combine("..", "..", "bin_dalamud") + Path.DirectorySeparatorChar);
-            File.WriteAllText(csprojPath, csproj);
-
-            Console.WriteLine("Compiling");
-            Process.Start(new ProcessStartInfo()
             {
-                FileName = "dotnet",
-                Arguments = $"publish {slnPath}",
-                UseShellExecute = true,
-            })!.WaitForExit();
+                var slnPath = Path.Combine("repo_ecommons", "ECommons.sln");
+                var csprojPath = Path.Combine("repo_ecommons", "ECommons", "ECommons.csproj");
+                var csproj = File.ReadAllText(csprojPath);
+                csproj = csproj.Replace("$(DalamudLibPath)", Path.Combine("..", "..", "bin_dalamud") + Path.DirectorySeparatorChar);
+                File.WriteAllText(csprojPath, csproj);
 
-            var path = Directory.GetFiles(Path.Combine("repo_ecommons", "ECommons", "bin", "Release")).First(x => x.EndsWith(".nupkg") && x.Contains("ECommons."));
+                Console.WriteLine("Compiling");
+                Process.Start(new ProcessStartInfo()
+                {
+                    FileName = "dotnet",
+                    Arguments = $"publish {slnPath}",
+                    UseShellExecute = true,
+                })!.WaitForExit();
 
-            if(PackageVersionExistsFromNupkgAsync(path).Result)
-            {
-                Console.WriteLine("Version already exists, will not upload");
-                return;
+                var path = Directory.GetFiles(Path.Combine("repo_ecommons", "ECommons", "bin", "Release")).First(x => x.EndsWith(".nupkg") && x.Contains("ECommons."));
+
+                if(PackageVersionExistsFromNupkgAsync(path).Result)
+                {
+                    Console.WriteLine("Version already exists, will not upload");
+                    return;
+                }
+
+                var sourceUrl = "https://api.nuget.org/v3/index.json";
+                PushPackage(path, sourceUrl, Key);
+                Console.WriteLine("Package uploaded successfully.");
             }
-
-            var sourceUrl = "https://api.nuget.org/v3/index.json";
-            PushPackage(path, sourceUrl, Key);
-            Console.WriteLine("Package uploaded successfully.");
         }
         catch(Exception e)
         {
@@ -268,5 +276,45 @@ internal class Program
         }
 
         return null;
+    }
+
+    static string GetBaseVersion(string version)
+    {
+        int index = version.IndexOf('-');
+        if(index == -1)
+            return version; // no suffix
+        return version.Substring(0, index);
+    }
+
+    static string? ExtractPackageKindFromCsproj(string csprojPath)
+    {
+        var csprojText = File.ReadAllText(csprojPath);
+        var startTag = "<PackageKind>";
+        var endTag = "</PackageKind>";
+        var startIndex = csprojText.IndexOf(startTag);
+        if(startIndex == -1)
+            return null;
+
+        var endIndex = csprojText.IndexOf(endTag, startIndex);
+        if(endIndex == -1)
+            return null;
+
+        int valueStart = startIndex + startTag.Length;
+        return csprojText[valueStart..endIndex].Trim();
+    }
+
+    static string ExtractVersionFromCsproj(string csprojPath)
+    {
+        var csprojText = File.ReadAllText(csprojPath);
+        var versionTagStart = csprojText.IndexOf("<Version>");
+        if(versionTagStart == -1)
+            throw new Exception("Version tag not found in csproj");
+
+        var versionTagEnd = csprojText.IndexOf("</Version>", versionTagStart);
+        if(versionTagEnd == -1)
+            throw new Exception("Version tag not closed in csproj");
+
+        int start = versionTagStart + "<Version>".Length;
+        return csprojText[start..versionTagEnd].Trim();
     }
 }
