@@ -48,7 +48,17 @@ internal class Program
                     BranchName = "master",
                 });
                 Console.WriteLine("Downloading Dalamud...");
-                using var dalamud = Client.GetStreamAsync("https://github.com/goatcorp/dalamud-distrib/raw/refs/heads/main/latest.zip").Result;
+                string dalamudUrl = "https://github.com/goatcorp/dalamud-distrib/raw/refs/heads/main";
+                var suffix = GetPackageSuffixFromNupkg(Path.Combine("repo_ecommons", "ECommons", "bin", "Release"));
+
+                if(!string.IsNullOrEmpty(suffix))
+                {
+                    dalamudUrl += $"/{suffix}";
+                }
+
+                dalamudUrl += "/latest.zip";
+
+                using var dalamud = Client.GetStreamAsync(dalamudUrl).Result;
                 Console.WriteLine("Extracting Dalamud...");
                 ZipFile.ExtractToDirectory(dalamud, "bin_dalamud");
             }
@@ -190,6 +200,44 @@ internal class Program
     public static async Task<bool> PackageVersionExistsFromNupkgAsync(string nupkgPath, string sourceUrl = "https://api.nuget.org/v3/index.json")
     {
         var (packageId, version) = GetPackageIdAndVersion(nupkgPath);
-        return await PackageVersionExistsAsync(packageId, version, sourceUrl);
+
+        // Always check exact version from .nupkg
+        if(await PackageVersionExistsAsync(packageId, version, sourceUrl))
+        {
+            Console.WriteLine($"Version '{version}' already exists.");
+            return true;
+        }
+
+        // If the version has a suffix (e.g. 3.0.0.8-beta), also check the base version (e.g. 3.0.0.8)
+        var dashIndex = version.IndexOf('-');
+        if(dashIndex > 0)
+        {
+            var baseVersion = version.Substring(0, dashIndex);
+            if(await PackageVersionExistsAsync(packageId, baseVersion, sourceUrl))
+            {
+                Console.WriteLine($"Base version '{baseVersion}' already exists.");
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    static string? GetPackageSuffixFromNupkg(string releaseFolderPath)
+    {
+        var nupkgPath = Directory.GetFiles(releaseFolderPath).FirstOrDefault(x => x.EndsWith(".nupkg") && x.Contains("ECommons."));
+        if(nupkgPath == null)
+        {
+            throw new FileNotFoundException("Could not find ECommons .nupkg in Release folder.");
+        }
+
+        var (_, version) = GetPackageIdAndVersion(nupkgPath);
+        var dashIndex = version.IndexOf('-');
+        if(dashIndex >= 0 && dashIndex < version.Length - 1)
+        {
+            return version.Substring(dashIndex + 1);
+        }
+
+        return null;
     }
 }
