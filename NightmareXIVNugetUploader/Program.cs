@@ -51,13 +51,13 @@ internal class Program
 
                 var csprojPath = Path.Combine("repo_ecommons", "ECommons", "ECommons.csproj");
 
-                // Read base version
-                string versionFromCsproj = ExtractVersionFromCsproj(csprojPath);
 
                 // Read suffix from PackageKind (null if missing)
                 string? packageKind = ExtractPackageKindFromCsproj(csprojPath);
 
-                string baseVersion = GetBaseVersion(versionFromCsproj);
+                string? baseVersion = GetBaseVersionFromCsproj(csprojPath);
+
+                Console.Write($"Package kind: {packageKind}, baseVersion: {baseVersion}");
 
                 string dalamudUrlBase = "https://github.com/goatcorp/dalamud-distrib/raw/refs/heads/main/";
                 string dalamudUrl = packageKind == null
@@ -65,7 +65,7 @@ internal class Program
                     : $"{dalamudUrlBase}{packageKind}/latest.zip";
 
                 using var dalamud = Client.GetStreamAsync(dalamudUrl).Result;
-                Console.WriteLine("Extracting Dalamud...");
+                Console.WriteLine($"Extracting Dalamud from ({dalamudUrl})...");
                 ZipFile.ExtractToDirectory(dalamud, "bin_dalamud");
             }
             {
@@ -278,12 +278,21 @@ internal class Program
         return null;
     }
 
-    static string GetBaseVersion(string version)
+    static string? GetBaseVersionFromCsproj(string csprojPath)
     {
-        int index = version.IndexOf('-');
-        if(index == -1)
-            return version; // no suffix
-        return version.Substring(0, index);
+        var csprojText = File.ReadAllText(csprojPath);
+        var startTag = "<BaseVersion>";
+        var endTag = "</BaseVersion>";
+        var startIndex = csprojText.IndexOf(startTag);
+        if(startIndex == -1)
+            return null;
+
+        var endIndex = csprojText.IndexOf(endTag, startIndex);
+        if(endIndex == -1)
+            return null;
+
+        int valueStart = startIndex + startTag.Length;
+        return csprojText[valueStart..endIndex].Trim();
     }
 
     static string? ExtractPackageKindFromCsproj(string csprojPath)
@@ -301,20 +310,5 @@ internal class Program
 
         int valueStart = startIndex + startTag.Length;
         return csprojText[valueStart..endIndex].Trim();
-    }
-
-    static string ExtractVersionFromCsproj(string csprojPath)
-    {
-        var csprojText = File.ReadAllText(csprojPath);
-        var versionTagStart = csprojText.IndexOf("<Version>");
-        if(versionTagStart == -1)
-            throw new Exception("Version tag not found in csproj");
-
-        var versionTagEnd = csprojText.IndexOf("</Version>", versionTagStart);
-        if(versionTagEnd == -1)
-            throw new Exception("Version tag not closed in csproj");
-
-        int start = versionTagStart + "<Version>".Length;
-        return csprojText[start..versionTagEnd].Trim();
     }
 }
