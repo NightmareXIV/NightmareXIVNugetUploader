@@ -92,7 +92,17 @@ internal class Program
                 }
 
                 var sourceUrl = "https://api.nuget.org/v3/index.json";
-                PushPackage(path, sourceUrl, Key);
+                var (packageId, version) = GetPackageIdAndVersion(path);
+                if(version.EndsWith("-stg", StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine("Uploading stg package as release");
+                    string releasePath = StripSuffixFromNupkg(path, version);
+                    PushPackage(releasePath, sourceUrl, Key);
+                }
+                else
+                {
+                    PushPackage(path, sourceUrl, Key);
+                }
                 Console.WriteLine("Package uploaded successfully.");
             }
         }
@@ -103,6 +113,38 @@ internal class Program
         }
         Console.WriteLine("Completed");
         //Console.ReadLine();
+    }
+
+    static string StripSuffixFromNupkg(string nupkgPath, string fullVersion)
+    {
+        string baseVersion = fullVersion.Split('-')[0];
+        string newPath = Path.Combine(Path.GetDirectoryName(nupkgPath)!, Path.GetFileName(nupkgPath)!.Replace(fullVersion, baseVersion));
+
+        using var original = new PackageArchiveReader(nupkgPath);
+        using var newStream = File.Create(newPath);
+        using var zip = new ZipArchive(newStream, ZipArchiveMode.Create);
+
+        foreach(var file in original.GetFiles())
+        {
+            var entryStream = original.GetStream(file);
+            var entryData = new MemoryStream();
+            entryStream.CopyTo(entryData);
+            entryData.Position = 0;
+
+            if(file.EndsWith(".nuspec", StringComparison.OrdinalIgnoreCase))
+            {
+                using var reader = new StreamReader(entryData, leaveOpen: true);
+                string content = reader.ReadToEnd();
+                content = content.Replace($"<version>{fullVersion}</version>", $"<version>{baseVersion}</version>");
+                entryData = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content));
+            }
+
+            var entry = zip.CreateEntry(file);
+            using var newEntryStream = entry.Open();
+            entryData.CopyTo(newEntryStream);
+        }
+
+        return newPath;
     }
 
     public static void PushPackage(string packagePath, string sourceUrl, string apiKey)
