@@ -76,14 +76,15 @@ internal class Program
                 File.WriteAllText(csprojPath, csproj);
 
                 Console.WriteLine("Compiling");
+                var home = Environment.GetEnvironmentVariable("HOME");
                 Process.Start(new ProcessStartInfo()
                 {
                     FileName = "dotnet",
-                    Arguments = $"publish {slnPath} -o output_directory",
+                    Arguments = $"publish {slnPath} -o {Path.Combine(home, "output_nxnu")}",
                     UseShellExecute = true,
                 })!.WaitForExit();
 
-                var path = Directory.GetFiles("output_directory").First(x => x.EndsWith(".nupkg") && x.Contains("ECommons."));
+                var path = Directory.GetFiles(Path.Combine(home, "output_nxnu")).First(x => x.EndsWith(".nupkg") && x.Contains("ECommons."));
 
                 if(PackageVersionExistsFromNupkgAsync(path).Result)
                 {
