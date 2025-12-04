@@ -80,11 +80,11 @@ internal class Program
                 Process.Start(new ProcessStartInfo()
                 {
                     FileName = "dotnet",
-                    Arguments = $"publish {slnPath} -o {Path.Combine(home, "output_nxnu")}",
+                    Arguments = $"publish {slnPath}",
                     UseShellExecute = true,
                 })!.WaitForExit();
 
-                var path = Directory.GetFiles(Path.Combine(home, "output_nxnu")).First(x => x.EndsWith(".nupkg") && x.Contains("ECommons."));
+                var path = Directory.GetFiles(".", "*.nupkg", SearchOption.AllDirectories).First(x => x.EndsWith(".nupkg") && x.Contains("ECommons."));
 
                 if(PackageVersionExistsFromNupkgAsync(path).Result)
                 {
