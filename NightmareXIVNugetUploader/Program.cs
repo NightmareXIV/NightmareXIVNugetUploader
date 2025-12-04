@@ -1,5 +1,4 @@
-﻿using LibGit2Sharp;
-using NuGet.Common;
+﻿using NuGet.Common;
 using NuGet.Configuration;
 using NuGet.Packaging;
 using NuGet.Packaging.Core;
@@ -30,6 +29,8 @@ internal class Program
         }
         try
         {
+            string csprojPath = null;
+            string slnPath = null;
             if(!NoDownload)
             {
                 if(Directory.Exists("repo"))
@@ -42,14 +43,10 @@ internal class Program
                     SetAttributesNormal(new("bin_dalamud"));
                     Directory.Delete("bin_dalamud", true);
                 }
-                Console.WriteLine("Downloading ECommons...");
-                LibGit2Sharp.Repository.Clone("https://github.com/NightmareXIV/ECommons.git", "repo", new CloneOptions()
-                {
-                    BranchName = "master",
-                });
                 Console.WriteLine("Downloading Dalamud...");
 
-                var csprojPath = Path.Combine("repo", "ECommons", "ECommons.csproj");
+                slnPath = Path.Combine("repo", "ECommons.sln");
+                csprojPath = Path.Combine("repo", "ECommons", "ECommons.csproj");
 
 
                 // Read suffix from PackageKind (null if missing)
@@ -69,8 +66,6 @@ internal class Program
                 ZipFile.ExtractToDirectory(dalamud, "bin_dalamud");
             }
             {
-                var slnPath = Path.Combine("repo", "ECommons.sln");
-                var csprojPath = Path.Combine("repo", "ECommons", "ECommons.csproj");
                 var csproj = File.ReadAllText(csprojPath);
                 csproj = csproj.Replace("$(DalamudLibPath)", Path.Combine("..", "..", "bin_dalamud") + Path.DirectorySeparatorChar);
                 File.WriteAllText(csprojPath, csproj);
@@ -353,5 +348,31 @@ internal class Program
 
         int valueStart = startIndex + startTag.Length;
         return csprojText[valueStart..endIndex].Trim();
+    }
+
+    public static Dictionary<string, string> ParseConfigFile(string path)
+    {
+        var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach(var line in File.ReadAllLines(path))
+        {
+            if(string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            int idx = line.IndexOf('=');
+            if(idx <= 0)
+            {
+                continue;
+            }
+
+            string key = line.Substring(0, idx).Trim();
+            string value = line.Substring(idx + 1).Trim();
+
+            dict[key] = value;
+        }
+
+        return dict;
     }
 }
