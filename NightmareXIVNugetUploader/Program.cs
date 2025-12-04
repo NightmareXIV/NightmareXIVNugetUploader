@@ -32,10 +32,10 @@ internal class Program
         {
             if(!NoDownload)
             {
-                if(Directory.Exists("repo_ecommons"))
+                if(Directory.Exists("repo"))
                 {
-                    SetAttributesNormal(new("repo_ecommons"));
-                    Directory.Delete("repo_ecommons", true);
+                    SetAttributesNormal(new("repo"));
+                    Directory.Delete("repo", true);
                 }
                 if(Directory.Exists("bin_dalamud"))
                 {
@@ -43,13 +43,13 @@ internal class Program
                     Directory.Delete("bin_dalamud", true);
                 }
                 Console.WriteLine("Downloading ECommons...");
-                LibGit2Sharp.Repository.Clone("https://github.com/NightmareXIV/ECommons.git", "repo_ecommons", new CloneOptions()
+                LibGit2Sharp.Repository.Clone("https://github.com/NightmareXIV/ECommons.git", "repo", new CloneOptions()
                 {
                     BranchName = "master",
                 });
                 Console.WriteLine("Downloading Dalamud...");
 
-                var csprojPath = Path.Combine("repo_ecommons", "ECommons", "ECommons.csproj");
+                var csprojPath = Path.Combine("repo", "ECommons", "ECommons.csproj");
 
 
                 // Read suffix from PackageKind (null if missing)
@@ -69,8 +69,8 @@ internal class Program
                 ZipFile.ExtractToDirectory(dalamud, "bin_dalamud");
             }
             {
-                var slnPath = Path.Combine("repo_ecommons", "ECommons.sln");
-                var csprojPath = Path.Combine("repo_ecommons", "ECommons", "ECommons.csproj");
+                var slnPath = Path.Combine("repo", "ECommons.sln");
+                var csprojPath = Path.Combine("repo", "ECommons", "ECommons.csproj");
                 var csproj = File.ReadAllText(csprojPath);
                 csproj = csproj.Replace("$(DalamudLibPath)", Path.Combine("..", "..", "bin_dalamud") + Path.DirectorySeparatorChar);
                 File.WriteAllText(csprojPath, csproj);
@@ -79,11 +79,11 @@ internal class Program
                 Process.Start(new ProcessStartInfo()
                 {
                     FileName = "dotnet",
-                    Arguments = $"publish {slnPath}",
+                    Arguments = $"publish {slnPath} -o output_directory",
                     UseShellExecute = true,
                 })!.WaitForExit();
 
-                var path = Directory.GetFiles(Path.Combine("repo_ecommons", "ECommons", "bin", "Release")).First(x => x.EndsWith(".nupkg") && x.Contains("ECommons."));
+                var path = Directory.GetFiles("output_directory").First(x => x.EndsWith(".nupkg") && x.Contains("ECommons."));
 
                 if(PackageVersionExistsFromNupkgAsync(path).Result)
                 {
