@@ -33,20 +33,15 @@ internal class Program
             string slnPath = null;
             if(!NoDownload)
             {
-                if(Directory.Exists("repo"))
-                {
-                    SetAttributesNormal(new("repo"));
-                    Directory.Delete("repo", true);
-                }
-                if(Directory.Exists("bin_dalamud"))
-                {
-                    SetAttributesNormal(new("bin_dalamud"));
-                    Directory.Delete("bin_dalamud", true);
-                }
                 Console.WriteLine("Downloading Dalamud...");
 
-                slnPath = Path.Combine("repo", "ECommons.sln");
-                csprojPath = Path.Combine("repo", "ECommons", "ECommons.csproj");
+                // Get the GitHub workspace root
+                string workspace = Environment.GetEnvironmentVariable("GITHUB_WORKSPACE")!;
+
+                string repoPath = Path.Combine(workspace, "repo");
+
+                slnPath = Path.Combine(repoPath, "ECommons.sln");
+                csprojPath = Path.Combine(repoPath, "ECommons", "ECommons.csproj");
 
 
                 // Read suffix from PackageKind (null if missing)
