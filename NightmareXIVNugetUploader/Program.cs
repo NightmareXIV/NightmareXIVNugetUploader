@@ -29,73 +29,67 @@ internal class Program
         }
         try
         {
-            string csprojPath = null;
-            string slnPath = null;
-            if(!NoDownload)
+            Console.WriteLine("Downloading Dalamud...");
+
+            // Get the GitHub workspace root
+            string workspace = Environment.GetEnvironmentVariable("GITHUB_WORKSPACE")!;
+            string repoPath = Path.Combine(workspace, "repo");
+            string repoFull = Environment.GetEnvironmentVariable("GITHUB_REPOSITORY")!;
+            string repoName = repoFull.Split('/').Last();
+
+            var slnPath = Path.Combine(repoPath, $"{repoName}.sln");
+            var csprojPath = Path.Combine(repoPath, $"{repoName}", $"{repoName}.csproj");
+
+
+            // Read suffix from PackageKind (null if missing)
+            string? packageKind = ExtractPackageKindFromCsproj(csprojPath);
+
+            string? baseVersion = GetBaseVersionFromCsproj(csprojPath);
+
+            Console.Write($"Package kind: {packageKind}, baseVersion: {baseVersion}");
+
+            string dalamudUrlBase = "https://github.com/goatcorp/dalamud-distrib/raw/refs/heads/main/";
+            string dalamudUrl = packageKind == null
+                ? $"{dalamudUrlBase}latest.zip"
+                : $"{dalamudUrlBase}{packageKind}/latest.zip";
+
+            using var dalamud = Client.GetStreamAsync(dalamudUrl).Result;
+            Console.WriteLine($"Extracting Dalamud from ({dalamudUrl})...");
+            ZipFile.ExtractToDirectory(dalamud, "bin_dalamud");
+            var csproj = File.ReadAllText(csprojPath);
+            csproj = csproj.Replace("$(DalamudLibPath)", Path.Combine("..", "..", "bin_dalamud") + Path.DirectorySeparatorChar);
+            File.WriteAllText(csprojPath, csproj);
+
+            Console.WriteLine("Compiling");
+            var home = Environment.GetEnvironmentVariable("HOME");
+            Process.Start(new ProcessStartInfo()
             {
-                Console.WriteLine("Downloading Dalamud...");
+                FileName = "dotnet",
+                Arguments = $"publish {slnPath}",
+                UseShellExecute = true,
+            })!.WaitForExit();
 
-                // Get the GitHub workspace root
-                string workspace = Environment.GetEnvironmentVariable("GITHUB_WORKSPACE")!;
+            var path = Directory.GetFiles(".", "*.nupkg", SearchOption.AllDirectories).First(x => x.EndsWith(".nupkg") && x.Contains($"{repoName}."));
 
-                string repoPath = Path.Combine(workspace, "repo");
-
-                slnPath = Path.Combine(repoPath, "ECommons.sln");
-                csprojPath = Path.Combine(repoPath, "ECommons", "ECommons.csproj");
-
-
-                // Read suffix from PackageKind (null if missing)
-                string? packageKind = ExtractPackageKindFromCsproj(csprojPath);
-
-                string? baseVersion = GetBaseVersionFromCsproj(csprojPath);
-
-                Console.Write($"Package kind: {packageKind}, baseVersion: {baseVersion}");
-
-                string dalamudUrlBase = "https://github.com/goatcorp/dalamud-distrib/raw/refs/heads/main/";
-                string dalamudUrl = packageKind == null
-                    ? $"{dalamudUrlBase}latest.zip"
-                    : $"{dalamudUrlBase}{packageKind}/latest.zip";
-
-                using var dalamud = Client.GetStreamAsync(dalamudUrl).Result;
-                Console.WriteLine($"Extracting Dalamud from ({dalamudUrl})...");
-                ZipFile.ExtractToDirectory(dalamud, "bin_dalamud");
-            }
+            if(PackageVersionExistsFromNupkgAsync(path).Result)
             {
-                var csproj = File.ReadAllText(csprojPath);
-                csproj = csproj.Replace("$(DalamudLibPath)", Path.Combine("..", "..", "bin_dalamud") + Path.DirectorySeparatorChar);
-                File.WriteAllText(csprojPath, csproj);
-
-                Console.WriteLine("Compiling");
-                var home = Environment.GetEnvironmentVariable("HOME");
-                Process.Start(new ProcessStartInfo()
-                {
-                    FileName = "dotnet",
-                    Arguments = $"publish {slnPath}",
-                    UseShellExecute = true,
-                })!.WaitForExit();
-
-                var path = Directory.GetFiles(".", "*.nupkg", SearchOption.AllDirectories).First(x => x.EndsWith(".nupkg") && x.Contains("ECommons."));
-
-                if(PackageVersionExistsFromNupkgAsync(path).Result)
-                {
-                    Console.WriteLine("Version already exists, will not upload");
-                    return;
-                }
-
-                var sourceUrl = "https://api.nuget.org/v3/index.json";
-                var (packageId, version) = GetPackageIdAndVersion(path);
-                if(version.EndsWith("-stg", StringComparison.OrdinalIgnoreCase))
-                {
-                    Console.WriteLine("Uploading stg package as release");
-                    string releasePath = StripSuffixFromNupkg(path, version);
-                    PushPackage(releasePath, sourceUrl, Key);
-                }
-                else
-                {
-                    PushPackage(path, sourceUrl, Key);
-                }
-                Console.WriteLine("Package uploaded successfully.");
+                Console.WriteLine("Version already exists, will not upload");
+                return;
             }
+
+            var sourceUrl = "https://api.nuget.org/v3/index.json";
+            var (packageId, version) = GetPackageIdAndVersion(path);
+            if(version.EndsWith("-stg", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("Uploading stg package as release");
+                string releasePath = StripSuffixFromNupkg(path, version);
+                PushPackage(releasePath, sourceUrl, Key);
+            }
+            else
+            {
+                PushPackage(path, sourceUrl, Key);
+            }
+            Console.WriteLine("Package uploaded successfully.");
         }
         catch(Exception e)
         {
@@ -293,12 +287,12 @@ internal class Program
             .ToList();
     }
 
-    static string? GetPackageSuffixFromNupkg(string releaseFolderPath)
+    static string? GetPackageSuffixFromNupkg(string releaseFolderPath, string repoName)
     {
-        var nupkgPath = Directory.GetFiles(releaseFolderPath).FirstOrDefault(x => x.EndsWith(".nupkg") && x.Contains("ECommons."));
+        var nupkgPath = Directory.GetFiles(releaseFolderPath).FirstOrDefault(x => x.EndsWith(".nupkg") && x.Contains($"{repoName}."));
         if(nupkgPath == null)
         {
-            throw new FileNotFoundException("Could not find ECommons .nupkg in Release folder.");
+            throw new FileNotFoundException($"Could not find {repoName} .nupkg in Release folder.");
         }
 
         var (_, version) = GetPackageIdAndVersion(nupkgPath);
